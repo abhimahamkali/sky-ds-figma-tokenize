@@ -253,11 +253,105 @@ for (const n of allNodes) {
 
 ## Step 1: Rename Layers Semantically
 
-> ⛔ **NEVER SKIP THIS STEP.** Do not say "existing names look fine" or "structural detection handles it." Step 2's `getContext()` reads parent-chain names. Without correct names, every `#FFFFFF` node defaults to `background/primary` instead of `card/bg` or `nav/bg` — visually identical in light mode, broken in dark mode. This step is non-optional.
+> ⛔ **NEVER SKIP THIS STEP. THIS IS NOT OPTIONAL. EVER.**
+>
+> Do NOT say:
+> - "existing names look fine"
+> - "structural detection handles most cases"
+> - "I'll proceed without renaming"
+> - "the frame already has good names"
+>
+> **You MUST execute the rename script below via `figma_execute` before Step 2. No exceptions.**
+>
+> Step 2's `getContext()` reads parent-chain names. Without correct names, every `#FFFFFF` fill defaults to `background/primary` instead of `card/bg` or `nav/bg` — visually identical in light mode, **completely broken in dark mode**. This is a silent failure: coverage % will look fine, but the frame will have white cards in dark mode.
 
-Semantic layer names are what make context-aware token binding possible. The binding logic in Step 2 walks each node's parent chain to determine context (is this inside a card? a button? a nav bar?).
+### Mandatory execution — run this script exactly as written
 
-### Naming conventions
+Copy this script, replace `TARGET_NODE_ID`, and execute via `figma_execute`. **You must call `figma_execute` with this code. You cannot skip it by reasoning about the layer names.**
+
+```javascript
+// STEP 1 — Mandatory semantic rename pass
+// Replace TARGET_NODE_ID with the actual frame ID
+const frame = await figma.getNodeByIdAsync("TARGET_NODE_ID");
+const allNodes = frame.findAll(() => true);
+
+let renamed = 0;
+
+function getParentChain(n) {
+  const names = [n.name];
+  let p = n.parent;
+  for (let i = 0; i < 5 && p; i++) { names.push(p.name); p = p.parent; }
+  return names.join("|").toLowerCase();
+}
+
+function rgbToHex(c) {
+  return [c.r,c.g,c.b].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join('');
+}
+
+for (const n of allNodes) {
+  // Skip nodes inside instances — internal sub-nodes are locked to component definition
+  let parentIsInstance = false;
+  let p = n.parent;
+  for (let i = 0; i < 4 && p; i++) {
+    if (p.type === "INSTANCE") { parentIsInstance = true; break; }
+    p = p.parent;
+  }
+  if (parentIsInstance) continue;
+  if (n.type === "INSTANCE") continue;
+
+  const isGeneric = /^(Frame|Rectangle|Group|Auto layout|Layer)\s*\d+$/.test(n.name);
+  if (!isGeneric) continue; // already has a semantic name — leave it
+
+  const chain = getParentChain(n);
+  const fills = n.fills || [];
+  const solidFill = fills.find(f => f.type === "SOLID" && f.visible !== false);
+  const hex = solidFill ? rgbToHex(solidFill.color) : null;
+  const w = n.width, h = n.height;
+  let newName = null;
+
+  if (chain.includes("card") || chain.includes("expert") || chain.includes("pick")) {
+    newName = w > 80 && h > 60 ? "Card/Content" : h < 25 ? "Card/Label Row" : "Card/Section";
+  } else if (chain.includes("watchlist") || chain.includes("stock")) {
+    newName = w > 300 ? "Card/Stock Item" : h < 20 ? "Stock/Label" : "Stock/Row";
+  } else if (chain.includes("nav") || chain.includes("navigation") || chain.includes("bottom")) {
+    newName = "Nav/Item";
+  } else if (chain.includes("button") || chain.includes("buy") || chain.includes("cta")) {
+    newName = "Button/Container";
+  } else if (chain.includes("tag") || chain.includes("intraday") || chain.includes("btst")) {
+    newName = "Tag/Container";
+  } else if (chain.includes("input") || chain.includes("search")) {
+    newName = "Input/Container";
+  } else if (chain.includes("banner") || chain.includes("notification") || chain.includes("holiday")) {
+    newName = "Banner/Container";
+  } else if (chain.includes("market") || chain.includes("mover") || chain.includes("gainer") || chain.includes("loser")) {
+    newName = "Card/Market Item";
+  } else if (chain.includes("header") || chain.includes("topbar")) {
+    newName = "Header/Container";
+  } else if (hex === "042ff2" || hex === "042ff1") {
+    newName = "Button/Primary";
+  } else if (hex === "ffffff" && w > 300 && h > 200) {
+    newName = "Card/Main";
+  } else if (hex === "eaeeff" || hex === "e5f3ff") {
+    newName = "Background/Surface";
+  } else if (hex === "f2f4fc") {
+    newName = "Background/Secondary";
+  } else if (h <= 44 && w <= 44) {
+    newName = "Icon/Container";
+  } else if (w > 350 && h < 60) {
+    newName = "Row/Container";
+  }
+
+  if (newName) { n.name = newName; renamed++; }
+}
+
+return { renamed, totalScanned: allNodes.length, message: `Step 1 complete — renamed ${renamed} generic nodes` };
+```
+
+### After running, confirm in the response
+
+After the `figma_execute` call returns, report: `"Step 1 complete — renamed N nodes"`. Only then proceed to Step 2.
+
+### Naming conventions reference
 
 | Category | Pattern | Examples |
 |---|---|---|
@@ -267,35 +361,8 @@ Semantic layer names are what make context-aware token binding possible. The bin
 | Tags | `Tag/{Type}` | `Tag/Intraday`, `Tag/BTST`, `Tag/Stock Ticker` |
 | Navigation | `Nav/{Item}` or `Bottom Navigation` | `Home Nav`, `Watchlist Nav` |
 | Sections | `{Name} Section` | `Expert Picks Section`, `News Section` |
-| Text labels | Descriptive of content | `Section Header`, `Stock Name`, `Price Label` |
 | Icons/vectors | Keep original or prefix with `Icon/` | `Icon/Search`, `Icon/Bell` |
 | Inputs | `Input/{Type}` | `Input/Text`, `Input/Numeric`, `Input/Search` |
-
-### How to rename programmatically
-
-```javascript
-const frame = await figma.getNodeByIdAsync("NODE_ID");
-const allNodes = frame.findAll(() => true);
-
-for (const n of allNodes) {
-  const name = n.name.toLowerCase();
-
-  // Auto-detect and rename based on node characteristics
-  if (n.type === "TEXT") {
-    // Keep text node names descriptive — use content or role
-    // e.g., "Buy Now" stays, "Text 1" becomes something meaningful
-  }
-
-  if (n.type === "FRAME" && n.cornerRadius > 0 && n.fills?.length > 0) {
-    // Likely a card or button — check size and context
-    if (n.width > 100 && n.height > 100) {
-      // Probably a card
-    }
-  }
-}
-```
-
-Renaming is context-dependent — examine the design and rename layers so the parent chain reveals the node's role (card, button, nav, tag, input, etc.).
 
 ---
 

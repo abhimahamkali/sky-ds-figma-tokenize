@@ -11,21 +11,44 @@ The input can be either:
 If it's a URL: extract the `node-id` query parameter and convert dashes to colons (`62-826` → `62:826`).
 If it's already a node ID, use it directly.
 
-## Step 2 — Run the figma-tokenize skill
+## Step 2 — Load the skill
 
-With the extracted node ID, execute the complete tokenization workflow defined in the figma-tokenize skill:
+Read the full skill file before doing anything else:
+`~/.claude/skills/figma-tokenize/SKILL.md`
 
-1. **Pre-check** — detect existing bindings, enforce SKY Light mode if re-tokenizing
-2. **Step 0** — detach all existing variable bindings and text styles (including gradient fills from external libraries)
-3. **Step 1** — rename layers semantically so context detection works correctly
-4. **Step 2** — bind every fill, stroke, and text node to the correct SKY DS token using the ground-truth `resolveToken()` mapping
-5. **Verify** — report coverage %, run auto-fix loop until ≥85% fills / ≥85% strokes or no further progress
-6. **Visual QA** — screenshot the frame in SKY Light mode, then SKY Dark mode; flag any white elements in dark mode
+## Step 3 — Execute the pipeline IN ORDER. No steps may be skipped.
 
-## Step 3 — Report back
+### 3a. Pre-check
+Detect existing bindings. If already tokenized → force SKY Light mode (`20:2`) first.
 
-After completion, show:
-- Coverage table (fills / strokes / text % for the frame)
+### 3b. Step 0 — Detach
+Detach all variable bindings (fills, strokes, text styles) including gradient fills from external libraries.
+
+### 3c. ⛔ Step 1 — Rename (MANDATORY — YOU MUST RUN THE RENAME SCRIPT)
+
+**THIS STEP CANNOT BE SKIPPED. EVER.**
+
+Execute the mandatory rename script from the SKILL.md Step 1 section via `figma_execute`.
+You MUST call `figma_execute` with the rename script. You cannot reason your way past this step.
+You cannot say "names look fine" or "structural detection handles it."
+You cannot proceed to Step 3d until `figma_execute` has returned a result confirming the rename ran.
+
+After running, confirm: `"Step 1 complete — renamed N nodes"` before continuing.
+
+### 3d. Step 2 — Bind tokens
+Only run this AFTER Step 1 has been confirmed complete.
+Bind every fill, stroke, and text node to the correct SKY DS token using the ground-truth `resolveToken()` mapping from the skill.
+
+### 3e. Verify + Auto-fix
+Report coverage %. Run auto-fix loop until ≥85% fills / ≥93% strokes / ≥85% text or no further progress.
+
+### 3f. Visual QA
+Screenshot in SKY Light mode (`20:2`), then SKY Dark mode (`20:3`). Restore to light. Flag any white elements in dark mode.
+
+## Step 4 — Report back
+
+Show:
+- Coverage table (fills / strokes / text %)
 - Light mode screenshot
 - Dark mode screenshot
-- Any unbound hex values with classification (UI element vs illustration vs unclassified)
+- Any unbound hex values grouped by: UI element (try harder) / illustration (leave) / unclassified (ask user)
