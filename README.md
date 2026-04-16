@@ -34,10 +34,12 @@ Coverage targets: **≥85% fills · ≥85% strokes · ≥85% text styles**
 ## Install (one command)
 
 ```bash
-npx sky-ds-figma-tokenize
+npx github:abhimahamkali/sky-ds-figma-tokenize
 ```
 
-That's it. The installer:
+That's it — no npm account needed. `npx` downloads directly from GitHub and runs the installer.
+
+The installer:
 - Copies `SKILL.md` → `~/.claude/skills/figma-tokenize/SKILL.md`
 - Copies the slash command → `~/.claude/commands/figma-tokenize.md`
 
@@ -85,14 +87,11 @@ git commit -m "fix: map #cb7434 orange to status_warning"
 git push
 ```
 
-Then publish the new version to npm:
+Your teammates get the update by running the install command again — it always pulls from `main`:
 
 ```bash
-npm version patch   # bumps 1.0.0 → 1.0.1
-npm publish
+npx github:abhimahamkali/sky-ds-figma-tokenize
 ```
-
-Your teammates get the update by running `npx sky-ds-figma-tokenize` again.
 
 ---
 
