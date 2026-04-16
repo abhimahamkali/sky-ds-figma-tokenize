@@ -31,67 +31,68 @@ Coverage targets: **≥85% fills · ≥85% strokes · ≥85% text styles**
 
 ---
 
-## Install (one-time setup)
+## Install (one command)
 
 ```bash
-# 1. Clone this repo into your Claude skills folder
-git clone https://github.com/YOUR_ORG/figma-tokenize ~/.claude/skills/figma-tokenize
-
-# 2. That's it — Claude Code auto-discovers skills in ~/.claude/skills/
+npx sky-ds-figma-tokenize
 ```
 
-> **Windows path:** `C:\Users\YOUR_NAME\.claude\skills\figma-tokenize\`  
-> **Mac/Linux path:** `~/.claude/skills/figma-tokenize/`
+That's it. The installer:
+- Copies `SKILL.md` → `~/.claude/skills/figma-tokenize/SKILL.md`
+- Copies the slash command → `~/.claude/commands/figma-tokenize.md`
+
+**Run the same command again anytime to update to the latest version.**
 
 ---
 
 ## Usage
 
-Open Claude Code in any terminal. With Figma Desktop open and the plugin running:
+Open Claude Code in any terminal. With Figma Desktop open and the Console plugin running:
 
 ```
-tokenize frame 62:826
+/figma-tokenize https://www.figma.com/design/FILE_ID/NAME?node-id=62-826
 ```
 
-or
+or with a bare node ID:
 
 ```
-apply tokens to the Watchlist frame
+/figma-tokenize 62:826
 ```
 
-Claude will read `SKILL.md`, run the full pipeline, and report back with coverage stats and screenshots.
+Claude parses the URL, extracts the frame, and runs the full pipeline. You watch your Figma file get tokenized in real time.
 
 ---
 
 ## Why sessions don't break this
 
-The `SKILL.md` file IS the workflow. Claude reads it fresh at the start of every tokenize request — so:
+The `SKILL.md` file IS the workflow. Claude reads it fresh at the start of every `/figma-tokenize` call — so:
 
-- ✅ New sessions always have the full instructions
-- ✅ Context limits don't cause the workflow to degrade  
-- ✅ All token IDs, hex-to-token mappings, and binding rules live in `SKILL.md`
-- ✅ Updating the skill = updating one file, then `git push`
+- ✅ New sessions always have the complete instructions
+- ✅ Context limits don't matter — no session memory required
+- ✅ All 75 token IDs, hex mappings, and binding rules live in `SKILL.md`
+- ✅ Updating the skill = `npx sky-ds-figma-tokenize` pulls the latest
 
 ---
 
 ## How to update the skill
 
-Whenever you discover a new edge case or fix a bug:
+When you discover a new edge case or fix a bug, edit `SKILL.md` and push:
 
 ```bash
-# Edit SKILL.md directly, then:
-cd ~/.claude/skills/figma-tokenize
+cd ~/.claude/skills/figma-tokenize   # or wherever you cloned it
 git add SKILL.md
-git commit -m "fix: add 68697e as text_secondary variant"
+git commit -m "fix: map #cb7434 orange to status_warning"
 git push
 ```
 
-Your teammates pull the update:
+Then publish the new version to npm:
 
 ```bash
-cd ~/.claude/skills/figma-tokenize
-git pull
+npm version patch   # bumps 1.0.0 → 1.0.1
+npm publish
 ```
+
+Your teammates get the update by running `npx sky-ds-figma-tokenize` again.
 
 ---
 

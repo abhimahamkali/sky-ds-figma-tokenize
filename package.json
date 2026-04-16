@@ -1,0 +1,23 @@
+{
+  "name": "sky-ds-figma-tokenize",
+  "version": "1.0.0",
+  "description": "Claude Code skill that tokenizes Figma frames with the SKY Design System — one command, full light/dark mode token binding.",
+  "keywords": ["figma", "design-tokens", "claude-code", "sky-design-system", "tokenize"],
+  "author": "abhimahamkali",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abhimahamkali/sky-ds-figma-tokenize.git"
+  },
+  "bin": {
+    "sky-ds-figma-tokenize": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "commands/",
+    "SKILL.md"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}
