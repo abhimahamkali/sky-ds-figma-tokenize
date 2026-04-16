@@ -57,7 +57,7 @@ console.log(`
 
   KEEP IT UPDATED
   ───────────────
-  npx sky-ds-figma-tokenize     (run again to update)
+  npx github:abhimahamkali/sky-ds-figma-tokenize     (run again to update)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
