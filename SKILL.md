@@ -40,6 +40,17 @@ Pre-check → Step 0 → Step 1 → Step 2 → Verify → Auto-fix gaps.
 - **After Step 2, always verify** and run a targeted fix pass on any fills/strokes/text that didn't bind. Loop until coverage is ≥85% fills / ≥95% strokes or no further progress is possible.
 - **Clone fallback (Rule 4)** is still the only recovery path for a frame corrupted by a past dark-mode detach. Use it if the user explicitly says the frame is broken.
 
+### ⛔ STEP 1 IS MANDATORY — NEVER SKIP IT
+
+Step 1 (semantic rename) **must always run**, even if existing names look reasonable. Do NOT reason "structural detection handles it" and skip. Here is why this reasoning is always wrong:
+
+- `getContext()` in Step 2 reads **parent-chain names** to decide which token to bind
+- A `#FFFFFF` fill on a card background → `card/bg` ONLY if an ancestor is named `Card/...`
+- Without the rename pass, that same node defaults to `background/primary` — visually identical in light mode but **wrong in dark mode** (card bg stays white)
+- Skipping Step 1 silently degrades every context-dependent binding. Coverage % will look fine; dark mode will break.
+
+**What "run Step 1" means in practice:** Scan all direct children and 2 levels deep. For any node whose name is generic (`Frame 123`, `Rectangle`, `Group`, `Auto layout`, `Content`, `Header`, `Item`) — rename it to the correct semantic convention (`Card/...`, `Button/...`, `Tag/...`, `Nav/...`, `Input/...`). Nodes that already have correct semantic names (e.g. `Sky Navigation`, `Home Nav`, `Button/Buy`) do NOT need renaming — just confirm and move on. The pass takes one `figma_execute` call. There is no valid reason to skip it.
+
 ## CRITICAL PRE-CHECK (run BEFORE Step 0 — no exceptions)
 
 **Why this exists:** Re-tokenizing an already-tokenized frame while the canvas is in dark mode corrupts the binding pass. Detach captures the resolved *dark-mode hex* (e.g. `#0F0F0F`, `#647483`, `#339E3D`), which doesn't match the light-mode source hexes the mapping function expects. Result: nav bars render bright cyan, buttons get wrong fills, cards break. Recovered once via full frame deletion + clone — do not repeat this.
@@ -241,6 +252,8 @@ for (const n of allNodes) {
 ---
 
 ## Step 1: Rename Layers Semantically
+
+> ⛔ **NEVER SKIP THIS STEP.** Do not say "existing names look fine" or "structural detection handles it." Step 2's `getContext()` reads parent-chain names. Without correct names, every `#FFFFFF` node defaults to `background/primary` instead of `card/bg` or `nav/bg` — visually identical in light mode, broken in dark mode. This step is non-optional.
 
 Semantic layer names are what make context-aware token binding possible. The binding logic in Step 2 walks each node's parent chain to determine context (is this inside a card? a button? a nav bar?).
 
