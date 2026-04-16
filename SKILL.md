@@ -451,7 +451,12 @@ function resolveToken(hex, nodeType, context, isStroke, tokens) {
 
   // ── #FFFFFF ──────────────────────────────────────────────────────────────
   if (hex === "ffffff") {
-    if (isStroke) return null; // #fff strokes are usually intentional near-invisible — skip
+    if (isStroke) {
+      // FRAME/RECT strokes → card/border (resolves to #DADFF6 light / #FFFFFF@10% dark)
+      // VECTOR/ELLIPSE strokes → leave null (icon halos, avatar rings — intentional design)
+      if (isFrame && nodeType !== 'ELLIPSE') return tokens.card_border;
+      return null;
+    }
     if (isText) return tokens.text_inverse;        // white text = on dark bg
     if (isVector) return tokens.icon_inverse;       // white icon = on dark bg
     // ⚠️ CRITICAL: NEVER apply btn_pri_text to FRAME/RECT nodes — btn_pri_text (#fff both modes)
@@ -516,11 +521,16 @@ function resolveToken(hex, nodeType, context, isStroke, tokens) {
     return tokens.text_error;
   }
 
-  // ── #EAEEFF (surface blue-tint) ───────────────────────────────────────────
-  if (["eaeeff","eaefff"].includes(hex)) {
-    if (context === "button") return tokens.btn_sec_bg;   // Button/Buy
-    return tokens.bg_surface;                              // icon button bg
+  // ── #EAEEFF / #E5F3FF (surface blue-tint) ────────────────────────────────
+  if (["eaeeff","eaefff","e5f3ff"].includes(hex)) {
+    if (isStroke) return tokens.bg_surface;               // notification/banner border → surface
+    if (context === "button") return tokens.btn_sec_bg;   // Button/Buy fill
+    return tokens.bg_surface;                             // icon button bg, notification bg
   }
+
+  // ── #FFF2D7 (warning amber tint) ─────────────────────────────────────────
+  // No matching SKY DS token — leave unbound (illustration/custom warning shade)
+  if (hex === "fff2d7") return null;
 
   // ── #F2F4FC / #F8F8FA (light gray backgrounds) ───────────────────────────
   if (["f2f4fc","f8f8fa","f2f4fb"].includes(hex)) {
