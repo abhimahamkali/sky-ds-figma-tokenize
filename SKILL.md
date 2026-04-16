@@ -165,26 +165,39 @@ Observed failure mode: a frame can be 100% token-bound and still look broken in 
 
 ## Step 0: Detach All Existing Tokens
 
-Before applying tokens, strip all existing variable bindings and text styles from the target frame.
-This ensures a clean slate — no stale bindings, no conflicts.
+> ⛔ **NEVER SKIP THIS STEP. THIS IS NOT OPTIONAL. EVER.**
+>
+> Do NOT say:
+> - "the frame looks clean already"
+> - "there are no old tokens to remove"
+> - "I'll skip detach since this is a fresh frame"
+> - "Step 0 is not needed here"
+>
+> **You MUST execute the detach script below via `figma_execute` before Step 1 or Step 2. No exceptions.**
+>
+> Overwriting bindings without detaching first leaves orphaned references and mixed states — some nodes keep stale tokens, some get new ones. The frame will appear correct in light mode but silently break in dark mode. **Always detach first. Every single time.**
 
-### Why this step matters
-Simply overwriting bindings can leave orphaned references or mixed states where some nodes have old tokens and others have new ones. Detaching first guarantees every node starts unbound, so the subsequent binding pass is complete and predictable.
+### Mandatory execution — run this script exactly as written
 
-### How to detach fills and strokes
-
-JSON cloning (`JSON.parse(JSON.stringify())`) does NOT unbind variables — the binding metadata survives serialization. You must rebuild paint objects from scratch:
+Copy this script, replace `TARGET_NODE_ID`, and execute via `figma_execute`.
 
 ```javascript
-// CORRECT way to detach fills
-const nodes = targetFrame.findAll(() => true);
-nodes.push(targetFrame); // findAll skips the root node!
+// STEP 0 — Mandatory detach pass. Removes ALL variable bindings and text styles.
+// Replace TARGET_NODE_ID with the actual frame ID.
+const frame = await figma.getNodeByIdAsync("TARGET_NODE_ID");
+if (!frame) return { error: "Frame not found" };
 
-for (const n of nodes) {
-  // Detach fills
+const allNodes = frame.findAll(() => true);
+allNodes.push(frame); // findAll skips the root — always add it manually
+
+let detachedFills = 0, detachedStrokes = 0, detachedText = 0, detachedExternal = 0;
+
+for (const n of allNodes) {
+  // ── Detach SOLID fills ──────────────────────────────────────────────────
   if (n.fills?.length > 0) {
     const newFills = n.fills.map(f => {
       if (f.type === "SOLID") {
+        detachedFills++;
         return {
           type: "SOLID",
           color: { r: f.color.r, g: f.color.g, b: f.color.b },
@@ -192,15 +205,16 @@ for (const n of nodes) {
           visible: f.visible !== undefined ? f.visible : true
         };
       }
-      return f;
+      return f; // non-SOLID fills handled in the external-library pass below
     });
     n.fills = newFills;
   }
 
-  // Detach strokes
+  // ── Detach SOLID strokes ────────────────────────────────────────────────
   if (n.strokes?.length > 0) {
     const newStrokes = n.strokes.map(s => {
       if (s.type === "SOLID") {
+        detachedStrokes++;
         return {
           type: "SOLID",
           color: { r: s.color.r, g: s.color.g, b: s.color.b },
@@ -213,41 +227,55 @@ for (const n of nodes) {
     n.strokes = newStrokes;
   }
 
-  // Detach text styles
+  // ── Detach text styles ──────────────────────────────────────────────────
   if (n.type === "TEXT" && n.textStyleId) {
-    n.setTextStyleIdAsync(""); // must use async due to documentAccess: dynamic-page
+    await n.setTextStyleIdAsync("");
+    detachedText++;
   }
 }
-```
 
-### Critical gotchas
-- `findAll(() => true)` does NOT include the root node — always handle `targetFrame` separately
-- Use `figma.getNodeByIdAsync()` not `figma.getNodeById()` (dynamic-page access)
-- Use `await node.setTextStyleIdAsync(styleId)` not `node.textStyleId = styleId`
-- `cornerRadius` can be a symbol on mixed-radius nodes — wrap in `try/catch` and check `typeof cr === "number"`
-- **GRADIENT fills are NOT detached by the SOLID-only detach loop** — you must also clear them. After Step 0, run an additional pass to find `GRADIENT_LINEAR` / `GRADIENT_RADIAL` fills bound to external-library variables and replace them with the appropriate solid SKY DS token (usually `card_bg` for large containers, `bg_primary` for page-level frames). Pattern:
+// ── Second pass: detach GRADIENT fills and external-library SOLID fills ──
+// JSON cloning does NOT remove binding metadata — must rebuild paint objects.
+// GRADIENT_LINEAR/GRADIENT_RADIAL fills from external libraries survive the
+// SOLID-only loop above and resolve to #FFFFFF in dark mode (breaking cards).
+const bgPrimary = await figma.variables.getVariableByIdAsync("VariableID:20:1662");
+const cardBg    = await figma.variables.getVariableByIdAsync("VariableID:20:1727");
 
-```javascript
 for (const n of allNodes) {
   if (!n.fills || !Array.isArray(n.fills)) continue;
-  for (let i = 0; i < n.fills.length; i++) {
-    const f = n.fills[i];
+  const newFills = [...n.fills];
+  let changed = false;
+  for (let i = 0; i < newFills.length; i++) {
+    const f = newFills[i];
     if (f.visible === false) continue;
-    const isExtGradient = f.type === 'GRADIENT_LINEAR' || f.type === 'GRADIENT_RADIAL';
-    const isExtSolid = f.type === 'SOLID' && f.boundVariables?.color?.id &&
-                       !f.boundVariables.color.id.startsWith('VariableID:20:');
+    const isExtGradient = f.type === "GRADIENT_LINEAR" || f.type === "GRADIENT_RADIAL";
+    const isExtSolid = f.type === "SOLID" && f.boundVariables?.color?.id &&
+                       !f.boundVariables.color.id.startsWith("VariableID:20:");
     if (isExtGradient || isExtSolid) {
-      // Determine correct token by context/size, then rebind
-      const variable = await figma.variables.getVariableByIdAsync(targetTokenId);
-      const newFills = [...n.fills];
+      // Replace with appropriate SKY DS token: card_bg for containers, bg_primary for pages
+      const token = (n.width > 200 && n.height > 200) ? cardBg : bgPrimary;
       newFills[i] = figma.variables.setBoundVariableForPaint(
-        { type: 'SOLID', color: { r: 1, g: 1, b: 1 } }, 'color', variable
+        { type: "SOLID", color: { r: 1, g: 1, b: 1 } }, "color", token
       );
-      n.fills = newFills;
+      detachedExternal++;
+      changed = true;
     }
   }
+  if (changed) n.fills = newFills;
 }
+
+return {
+  message: `Step 0 complete — detached ${detachedFills} fills, ${detachedStrokes} strokes, ${detachedText} text styles, ${detachedExternal} external/gradient fills`,
+  detachedFills, detachedStrokes, detachedText, detachedExternal
+};
 ```
+
+### After running, confirm in the response
+
+After `figma_execute` returns, report the result line: `"Step 0 complete — detached N fills, N strokes, N text styles, N external/gradient fills"`. Only then proceed to Step 1.
+
+### Why JSON cloning fails
+`JSON.parse(JSON.stringify(paint))` does NOT remove binding metadata — the `boundVariables` reference survives serialization. You must construct a brand-new paint object from scratch (as the script above does) to sever the variable link.
 
 ---
 

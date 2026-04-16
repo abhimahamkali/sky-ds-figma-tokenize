@@ -21,8 +21,18 @@ Read the full skill file before doing anything else:
 ### 3a. Pre-check
 Detect existing bindings. If already tokenized → force SKY Light mode (`20:2`) first.
 
-### 3b. Step 0 — Detach
-Detach all variable bindings (fills, strokes, text styles) including gradient fills from external libraries.
+### 3b. ⛔ Step 0 — Detach (MANDATORY — YOU MUST RUN THE DETACH SCRIPT)
+
+**THIS STEP CANNOT BE SKIPPED. EVER.**
+
+Execute the mandatory detach script from the SKILL.md Step 0 section via `figma_execute`.
+You MUST call `figma_execute` with the detach script. You cannot reason your way past this step.
+You cannot say "the frame looks clean" or "there are no old tokens" or "this is a fresh frame."
+You cannot proceed to Step 3c until `figma_execute` has returned a result confirming the detach ran.
+
+The script handles: SOLID fills, SOLID strokes, text styles, GRADIENT fills, and external-library variable bindings — all in one pass.
+
+After running, confirm: `"Step 0 complete — detached N fills, N strokes, N text styles, N external/gradient fills"` before continuing.
 
 ### 3c. ⛔ Step 1 — Rename (MANDATORY — YOU MUST RUN THE RENAME SCRIPT)
 
