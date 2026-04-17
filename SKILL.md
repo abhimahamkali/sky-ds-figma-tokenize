@@ -335,9 +335,25 @@ for (const n of allNodes) {
   const solidFill = fills.find(f => f.type === "SOLID" && f.visible !== false);
   const hex = solidFill ? rgbToHex(solidFill.color) : null;
   const w = n.width, h = n.height;
+  const cr = typeof n.cornerRadius === 'number' ? n.cornerRadius : 0;
   let newName = null;
 
-  if (chain.includes("card") || chain.includes("expert") || chain.includes("pick")) {
+  // ── PRIORITY 1: STRUCTURAL signals (size + radius + color) ──
+  // These fire FIRST, regardless of parent chain. A button inside a card is still a button.
+  // ⚠️ April 2026 fix: previously parent chain ran first, causing buttons inside cards
+  // to be named Card/Section instead of Button/Container — breaking token assignment.
+
+  if (h <= 28 && cr >= 4 && w <= 120) {
+    newName = "Tag/Container";                              // Small pill = always a tag
+  } else if (h >= 36 && h <= 56 && cr >= 6 && w <= 340) {
+    newName = "Button/Container";                           // Medium rounded = always a button
+  } else if (hex === "042ff2" || hex === "042ff1") {
+    newName = h <= 28 ? "Tag/Primary" : "Button/Primary";  // Brand blue = button or tag by size
+  } else if (h >= 40 && h <= 60 && w >= 200 && cr >= 8 && (chain.includes("input") || chain.includes("search") || chain.includes("enter"))) {
+    newName = "Input/Container";                            // Input field
+
+  // ── PRIORITY 2: PARENT CHAIN signals (only for nodes that didn't match structurally) ──
+  } else if (chain.includes("card") || chain.includes("expert") || chain.includes("pick")) {
     newName = w > 80 && h > 60 ? "Card/Content" : h < 25 ? "Card/Label Row" : "Card/Section";
   } else if (chain.includes("watchlist") || chain.includes("stock")) {
     newName = w > 300 ? "Card/Stock Item" : h < 20 ? "Stock/Label" : "Stock/Row";
@@ -355,8 +371,8 @@ for (const n of allNodes) {
     newName = "Card/Market Item";
   } else if (chain.includes("header") || chain.includes("topbar")) {
     newName = "Header/Container";
-  } else if (hex === "042ff2" || hex === "042ff1") {
-    newName = "Button/Primary";
+
+  // ── PRIORITY 3: FILL COLOR + SIZE fallback ──
   } else if (hex === "ffffff" && w > 300 && h > 200) {
     newName = "Card/Main";
   } else if (hex === "eaeeff" || hex === "e5f3ff") {
@@ -476,23 +492,46 @@ Ground-truth token map derived from `38:4071` (approved reference screen in SKY 
 
 ---
 
-### Context Detection — Structural-First, Name-Second
+### Context Detection — Self-First, Then Name-Chain
 
-**IMPORTANT:** Context is determined primarily by visual/structural signals. Layer names are a secondary confirmation. This ensures binding works correctly even on frames that haven't been renamed.
+> ⚠️ **CRITICAL FIX (April 2026):** The previous version checked parent chain BEFORE the node's own
+> identity. This caused **buttons inside cards** to be tagged as "card" and receive card tokens
+> (e.g., `card/border` on a Buy button stroke). The fix: check the **node's own name and structural
+> signals first**, then fall back to parent chain only for nodes that don't match anything themselves.
+>
+> **The rule:** A node IS what IT is, not what its PARENT is. A Button inside a Card is a button.
+> A Tag inside a Card is a tag. Only use parent chain for nodes with no self-identity.
 
 ```javascript
 function getContext(node) {
   const w = Math.round(node.width);
   const h = Math.round(node.height);
   const cr = typeof node.cornerRadius === 'number' ? node.cornerRadius : 0;
+  const ownName = (node.name || "").toLowerCase();
 
-  // --- 1. STRUCTURAL signals (always check first) ---
+  // --- 0. SELF-NAME check (highest priority — the node's own name wins) ---
+  // If Step 1 already renamed this node, trust that name over everything else.
+  if (ownName.startsWith("button/") || ownName.startsWith("btn/")) return "button";
+  if (ownName.startsWith("tag/")) return "tag";
+  if (ownName.startsWith("input/")) return "input";
+  if (ownName.startsWith("card/")) return "card";
+  if (ownName.startsWith("nav/")) return "nav";
+  if (ownName.startsWith("banner/")) return "banner";
+
+  // --- 1. STRUCTURAL signals (check before parent chain) ---
 
   // Tag / pill: small, high corner radius
   if (h <= 28 && cr >= 4 && w <= 120) return "tag";
 
   // Button: medium height, rounded, not full-width
+  // ⚠️ This MUST fire even inside a card parent — a 116×38 rounded frame is a button.
   if (h >= 36 && h <= 56 && cr >= 6 && w <= 340) return "button";
+
+  // Input: medium height, large width, rounded, with subtle fill or stroke
+  if (h >= 40 && h <= 60 && w >= 200 && cr >= 8) {
+    const chain = getNameChain(node);
+    if (chain.includes("input") || chain.includes("search") || chain.includes("enter")) return "input";
+  }
 
   // Card: white-ish fill, rounded, medium-large
   if (node.fills?.[0]?.type === 'SOLID' && w >= 120 && h >= 80) {
@@ -507,12 +546,12 @@ function getContext(node) {
     if (chain.includes("navigation") || chain.includes("nav/bottom") || chain.includes("bottom nav")) return "nav";
   }
 
-  // --- 2. NAME signals (secondary) ---
+  // --- 2. PARENT-CHAIN signals (fallback for nodes with no self-identity) ---
   const chain = getNameChain(node);
 
-  if (chain.includes("card/")) return "card";
-  if (chain.includes("tag/")) return "tag";
   if (chain.includes("button/") || chain.includes("btn/")) return "button";
+  if (chain.includes("tag/")) return "tag";
+  if (chain.includes("card/")) return "card";
   if (chain.includes("tab/active")) return "tab_active";
   if (chain.includes("tab/inactive") || chain.includes("tab/")) return "tab_inactive";
   if (chain.includes("bottom navigation") || chain.includes("nav/bottom") || chain.includes("sky nanvigation")) return "nav";
@@ -538,6 +577,18 @@ function getNameChain(node) {
 
 Every mapping below is verified against the approved reference screen `38:4071`.
 
+> ⚠️ **SEMANTIC CORRECTNESS RULE (April 2026 fix)**
+>
+> **NEVER cross-apply tokens from a different semantic category.** Specifically:
+> - Card context → ALWAYS use `card/border` for strokes, `card/bg` for fills — even if `border/default` has "better" dark-mode contrast
+> - Button context → ALWAYS use `btn_*` tokens — even if the button is inside a card
+> - Nav context → ALWAYS use `nav_*` tokens
+> - Input context → ALWAYS use `input_*` tokens
+>
+> If a semantically correct token produces poor contrast in dark mode, that is a **DS-level issue**
+> to flag in the Step 2.5 audit — NOT a reason to swap in a token from a different category.
+> The tokenization layer must reflect what the element IS, not work around DS gaps.
+
 ```javascript
 function resolveToken(hex, nodeType, context, isStroke, tokens) {
   const isText = nodeType === 'TEXT';
@@ -547,10 +598,13 @@ function resolveToken(hex, nodeType, context, isStroke, tokens) {
   // ── #FFFFFF ──────────────────────────────────────────────────────────────
   if (hex === "ffffff") {
     if (isStroke) {
-      // FRAME/RECT strokes → card/border (resolves to #DADFF6 light / #FFFFFF@10% dark)
-      // VECTOR/ELLIPSE strokes → leave null (icon halos, avatar rings — intentional design)
-      if (isFrame && nodeType !== 'ELLIPSE') return tokens.card_border;
-      return null;
+      // Semantic correctness: use the token that matches the ELEMENT'S identity
+      if (context === "card") return tokens.card_border;       // Card stroke → card/border
+      if (context === "button") return tokens.border_default;  // Button stroke → border/default
+      if (context === "input") return tokens.input_border;     // Input stroke → input/border
+      if (context === "nav") return tokens.nav_border;         // Nav stroke → nav/border
+      if (isFrame && nodeType !== 'ELLIPSE') return tokens.card_border; // generic frame fallback
+      return null; // VECTOR/ELLIPSE strokes → leave null (icon halos, avatar rings)
     }
     if (isText) return tokens.text_inverse;        // white text = on dark bg
     if (isVector) return tokens.icon_inverse;       // white icon = on dark bg
@@ -815,6 +869,57 @@ const rate = Math.round(boundFills / (boundFills + unboundFills) * 100);
 
 ---
 
+## Step 2.5: Dark Mode Contrast Audit (Flag, Don't Fix)
+
+> **Added April 2026.** This step runs AFTER Step 2 verification but BEFORE Step 3 Visual QA.
+> It flags token combinations that may produce poor contrast in dark mode — but it does NOT
+> silently swap tokens. The correct token stays; the issue goes into the report for the DS team.
+
+### Why this exists
+
+Previously, the tokenization pipeline would silently swap `card/border` → `border/default` on card
+strokes because `card/border` resolves to `#FFFFFF @ 10%` in dark mode (nearly invisible on `#141414`
+card backgrounds). This created semantically incorrect bindings: a card stroke tagged with a generic
+border token. The right behavior: apply `card/border` because the element IS a card, and flag the
+contrast issue for the design system team to address at the token definition level.
+
+### What to scan
+
+After Step 2 binding is complete, run this audit on all bound strokes:
+
+```javascript
+// Known low-contrast pairs in dark mode (flag these)
+const LOW_CONTRAST_PAIRS = [
+  { token: "card/border", parent: "card/bg", darkContrast: 1.1, note: "card/border (#FFF@10%) on card/bg (#141414) is nearly invisible" },
+  { token: "divider/subtle", parent: "card/bg", darkContrast: 1.3, note: "divider/subtle (#FFF@20%) on card/bg can be hard to see" },
+  { token: "nav/border", parent: "nav/bg", darkContrast: 1.2, note: "nav/border (#1F1F1F) on nav/bg (#0A0A0A) is very subtle" },
+];
+```
+
+### Output format
+
+Include in the final report as a separate section:
+
+```
+### Dark Mode Contrast Flags (for DS team)
+These bindings are SEMANTICALLY CORRECT but may produce low contrast in dark mode.
+Fix at the token definition level, not by swapping to a different token category.
+
+| Element | Token applied | Parent token | Dark contrast | Recommendation |
+|---|---|---|---|---|
+| Card/Expert Pick stroke | card/border | card/bg | ~1.1:1 | Increase card/border dark opacity to 20-30% |
+| Nav/Bottom border | nav/border | nav/bg | ~1.2:1 | Lighten nav/border dark value |
+```
+
+### What NOT to do
+
+- ❌ Do NOT swap `card/border` → `border/default` to fix contrast
+- ❌ Do NOT swap `nav/border` → `border/subtle` to fix contrast
+- ❌ Do NOT override any semantically correct token for visual reasons
+- ✅ DO flag the issue and let the DS team decide whether to update the token value
+
+---
+
 ## Step 3: Visual QA + Fix Loop
 
 Binding coverage % does not guarantee visual correctness. A frame can be fully tokenized and still look broken — invisible strokes, wrong card fills, unreadable text, broken overlays. This step catches those failures and ensures **light mode and dark mode are both seamless with no UI issues**.
@@ -1004,6 +1109,7 @@ Since effects (shadows) and physical properties (stroke weight, corner radius) c
 - [ ] **Step 2c**: Apply color tokens to strokes
 - [ ] **Step 2d**: Apply text styles using size_weight mapping
 - [ ] **Step 2 verify**: Run binding audit — target 85%+ fills, 95%+ strokes; auto-fix gaps
+- [ ] **Step 2.5**: Run dark mode contrast audit — flag low-contrast token pairs, do NOT swap tokens
 - [ ] **Step 3a**: Screenshot first 3–4 screens in SKY Light (`20:2`)
 - [ ] **Step 3b**: Inspect each light-mode screenshot — card fills, strokes, button fills, text contrast, tags, overlays (6 checks)
 - [ ] **Step 3c**: Re-bind any failing nodes using the failure → correct token table
