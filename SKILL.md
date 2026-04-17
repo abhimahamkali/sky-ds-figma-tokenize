@@ -838,6 +838,231 @@ for (const t of textNodes) {
 }
 ```
 
+### Step 2e: Bind Numeric Variables (Radius, Spacing, Font Size)
+
+> **Added April 2026.** After color tokens and text styles, bind all numeric properties
+> (corner radius, padding, item spacing, font size) to the Radius & Spacing / Typography
+> variable collections. This ensures numeric values show as tokenized in Figma's UI
+> (purple pill with variable name) rather than raw numbers.
+
+#### Numeric Variable Reference
+
+**Radius & Spacing collection** (`VariableCollectionId:2:94`, Mode: `2:3`)
+
+| Token | Variable ID | Value |
+|---|---|---|
+| Space/2 | 2:95 | 2 |
+| Space/4 | 2:96 | 4 |
+| Space/6 | 2:97 | 6 |
+| Space/8 | 2:98 | 8 |
+| Space/12 | 2:99 | 12 |
+| Space/14 | 2:100 | 14 |
+| Space/16 | 2:101 | 16 |
+| Space/20 | 2:102 | 20 |
+| Space/24 | 2:103 | 24 |
+| Space/28 | 2:104 | 28 |
+| Space/30 | 2:105 | 30 |
+| Space/36 | 2:106 | 36 |
+| Space/42 | 2:107 | 42 |
+| Radius/2 | 2:108 | 2 |
+| Radius/4 | 2:109 | 4 |
+| Radius/6 | 2:110 | 6 |
+| Radius/8 | 2:111 | 8 |
+| Radius/12 | 2:112 | 12 |
+| Radius/16 | 2:113 | 16 |
+| Radius/20 | 2:114 | 20 |
+| Radius/24 | 2:115 | 24 |
+| Radius/28 | 2:116 | 28 |
+| Radius/100 | 2:117 | 100 |
+
+**Typography Tokens collection** (`VariableCollectionId:2:118`, Mode: `2:4`)
+
+| Token | Variable ID | Value |
+|---|---|---|
+| Font size/10 | 2:128 | 10 |
+| Font size/12 | 2:129 | 12 |
+| Font size/14 | 2:130 | 14 |
+| Font size/16 | 2:131 | 16 |
+| Font size/18 | 2:132 | 18 |
+| Font size/20 | 2:133 | 20 |
+| Font size/24 | 2:134 | 24 |
+| Font size/28 | 2:135 | 28 |
+| Font size/30 | 2:136 | 30 |
+| Font size/36 | 2:137 | 36 |
+
+#### How numeric binding works
+
+Numeric variables use `setBoundVariable()` directly on the node (unlike paint variables which use `setBoundVariableForPaint()`):
+
+```javascript
+// Corner radius — bind all 4 corners to the matching Radius/* token
+const radiusVar = await figma.variables.getVariableByIdAsync("VariableID:2:112"); // Radius/12
+node.setBoundVariable("topLeftRadius", radiusVar);
+node.setBoundVariable("topRightRadius", radiusVar);
+node.setBoundVariable("bottomLeftRadius", radiusVar);
+node.setBoundVariable("bottomRightRadius", radiusVar);
+
+// Auto-layout padding — bind each direction to the matching Space/* token
+const spaceVar = await figma.variables.getVariableByIdAsync("VariableID:2:102"); // Space/20
+node.setBoundVariable("paddingTop", spaceVar);
+node.setBoundVariable("paddingBottom", spaceVar);
+node.setBoundVariable("paddingLeft", spaceVar);
+node.setBoundVariable("paddingRight", spaceVar);
+
+// Auto-layout gap — bind itemSpacing
+node.setBoundVariable("itemSpacing", spaceVar);
+
+// Font size — bind on TEXT nodes
+const fontVar = await figma.variables.getVariableByIdAsync("VariableID:2:131"); // Font size/16
+textNode.setBoundVariable("fontSize", fontVar);
+```
+
+#### Nearest-match lookup
+
+Not every raw value has an exact token match. Use nearest-match to snap to the closest available token:
+
+```javascript
+// Radius tokens available: 2, 4, 6, 8, 12, 16, 20, 24, 28, 100
+const RADIUS_MAP = {2:'2:108',4:'2:109',6:'2:110',8:'2:111',12:'2:112',16:'2:113',20:'2:114',24:'2:115',28:'2:116',100:'2:117'};
+
+// Spacing tokens available: 2, 4, 6, 8, 12, 14, 16, 20, 24, 28, 30, 36, 42
+const SPACING_MAP = {2:'2:95',4:'2:96',6:'2:97',8:'2:98',12:'2:99',14:'2:100',16:'2:101',20:'2:102',24:'2:103',28:'2:104',30:'2:105',36:'2:106',42:'2:107'};
+
+// Font size tokens available: 10, 12, 14, 16, 18, 20, 24, 28, 30, 36
+const FONTSIZE_MAP = {10:'2:128',12:'2:129',14:'2:130',16:'2:131',18:'2:132',20:'2:133',24:'2:134',28:'2:135',30:'2:136',36:'2:137'};
+
+function findNearest(value, map) {
+  const keys = Object.keys(map).map(Number);
+  const nearest = keys.reduce((best, k) => Math.abs(k - value) < Math.abs(best - value) ? k : best);
+  // Only snap if within 1px tolerance — don't force 15 → 14
+  if (Math.abs(nearest - value) <= 1) return map[nearest];
+  return null; // No close match — leave unbound
+}
+```
+
+#### Full Step 2e script
+
+```javascript
+// STEP 2e — Bind numeric variables (radius, spacing, font size)
+// Run AFTER Step 2a-d (color tokens + text styles)
+
+const RADIUS_MAP = {2:'2:108',4:'2:109',6:'2:110',8:'2:111',12:'2:112',16:'2:113',20:'2:114',24:'2:115',28:'2:116',100:'2:117'};
+const SPACING_MAP = {2:'2:95',4:'2:96',6:'2:97',8:'2:98',12:'2:99',14:'2:100',16:'2:101',20:'2:102',24:'2:103',28:'2:104',30:'2:105',36:'2:106',42:'2:107'};
+const FONTSIZE_MAP = {10:'2:128',12:'2:129',14:'2:130',16:'2:131',18:'2:132',20:'2:133',24:'2:134',28:'2:135',30:'2:136',36:'2:137'};
+
+function findNearest(value, map) {
+  if (!value || value <= 0) return null;
+  const keys = Object.keys(map).map(Number);
+  const nearest = keys.reduce((best, k) => Math.abs(k - value) < Math.abs(best - value) ? k : best);
+  if (Math.abs(nearest - value) <= 1) return map[nearest];
+  return null;
+}
+
+// Preload all numeric variables
+const numVarCache = {};
+async function getNumVar(id) {
+  if (!id) return null;
+  if (!numVarCache[id]) numVarCache[id] = await figma.variables.getVariableByIdAsync("VariableID:" + id);
+  return numVarCache[id];
+}
+
+const frame = await figma.getNodeByIdAsync("TARGET_NODE_ID");
+const allNodes = frame.findAll(() => true);
+allNodes.push(frame);
+
+let boundRadius = 0, boundPadding = 0, boundSpacing = 0, boundFontSize = 0, skipped = 0;
+
+for (const n of allNodes) {
+  try {
+    // ── Corner Radius ────────────────────────────────────────────────
+    const cr = typeof n.cornerRadius === 'number' ? n.cornerRadius : null;
+    if (cr && cr > 0 && !n.boundVariables?.topLeftRadius) {
+      const varId = findNearest(cr, RADIUS_MAP);
+      if (varId) {
+        const v = await getNumVar(varId);
+        if (v) {
+          n.setBoundVariable("topLeftRadius", v);
+          n.setBoundVariable("topRightRadius", v);
+          n.setBoundVariable("bottomLeftRadius", v);
+          n.setBoundVariable("bottomRightRadius", v);
+          boundRadius++;
+        }
+      }
+    }
+    // Handle individual corner radii (when cornerRadius is mixed/symbol)
+    if (cr === null || typeof cr === 'symbol') {
+      for (const corner of ["topLeftRadius","topRightRadius","bottomLeftRadius","bottomRightRadius"]) {
+        const val = n[corner];
+        if (typeof val === 'number' && val > 0 && !n.boundVariables?.[corner]) {
+          const varId = findNearest(val, RADIUS_MAP);
+          if (varId) { const v = await getNumVar(varId); if (v) n.setBoundVariable(corner, v); }
+        }
+      }
+    }
+
+    // ── Auto-layout Padding ──────────────────────────────────────────
+    if (n.layoutMode && n.layoutMode !== "NONE") {
+      for (const prop of ["paddingTop","paddingBottom","paddingLeft","paddingRight"]) {
+        const val = n[prop];
+        if (typeof val === 'number' && val > 0 && !n.boundVariables?.[prop]) {
+          const varId = findNearest(val, SPACING_MAP);
+          if (varId) {
+            const v = await getNumVar(varId);
+            if (v) { n.setBoundVariable(prop, v); boundPadding++; }
+          }
+        }
+      }
+
+      // ── Item Spacing (gap) ───────────────────────────────────────
+      const gap = n.itemSpacing;
+      if (typeof gap === 'number' && gap > 0 && !n.boundVariables?.itemSpacing) {
+        const varId = findNearest(gap, SPACING_MAP);
+        if (varId) {
+          const v = await getNumVar(varId);
+          if (v) { n.setBoundVariable("itemSpacing", v); boundSpacing++; }
+        }
+      }
+    }
+
+    // ── Font Size (TEXT nodes) ────────────────────────────────────────
+    if (n.type === "TEXT" && typeof n.fontSize === 'number' && !n.boundVariables?.fontSize) {
+      const varId = findNearest(n.fontSize, FONTSIZE_MAP);
+      if (varId) {
+        const v = await getNumVar(varId);
+        if (v) { n.setBoundVariable("fontSize", v); boundFontSize++; }
+      }
+    }
+  } catch(e) {
+    skipped++;
+  }
+}
+
+return {
+  message: `Step 2e complete — bound ${boundRadius} radii, ${boundPadding} paddings, ${boundSpacing} gaps, ${boundFontSize} font sizes`,
+  boundRadius, boundPadding, boundSpacing, boundFontSize, skipped
+};
+```
+
+#### Verification
+
+After Step 2e, audit numeric binding coverage:
+
+```javascript
+let boundR = 0, totalR = 0, boundP = 0, totalP = 0, boundG = 0, totalG = 0;
+for (const n of allNodes) {
+  if (typeof n.cornerRadius === 'number' && n.cornerRadius > 0) {
+    totalR++; if (n.boundVariables?.topLeftRadius) boundR++;
+  }
+  if (n.layoutMode && n.layoutMode !== "NONE") {
+    if (n.paddingTop > 0) { totalP++; if (n.boundVariables?.paddingTop) boundP++; }
+    if (n.itemSpacing > 0) { totalG++; if (n.boundVariables?.itemSpacing) boundG++; }
+  }
+}
+// Target: 80%+ radius, 70%+ padding/spacing (lower threshold — many custom values won't have exact token matches)
+```
+
+---
+
 ### Batch Processing Pattern
 
 For large pages (100+ components), process in batches to avoid timeouts:
@@ -1108,7 +1333,8 @@ Since effects (shadows) and physical properties (stroke weight, corner radius) c
 - [ ] **Step 2b**: Apply color tokens to fills using context-aware hex mapping
 - [ ] **Step 2c**: Apply color tokens to strokes
 - [ ] **Step 2d**: Apply text styles using size_weight mapping
-- [ ] **Step 2 verify**: Run binding audit — target 85%+ fills, 95%+ strokes; auto-fix gaps
+- [ ] **Step 2e**: Bind numeric variables — radius, padding, spacing, font size (1px tolerance snap)
+- [ ] **Step 2 verify**: Run binding audit — target 85%+ fills, 95%+ strokes, 80%+ radii; auto-fix gaps
 - [ ] **Step 2.5**: Run dark mode contrast audit — flag low-contrast token pairs, do NOT swap tokens
 - [ ] **Step 3a**: Screenshot first 3–4 screens in SKY Light (`20:2`)
 - [ ] **Step 3b**: Inspect each light-mode screenshot — card fills, strokes, button fills, text contrast, tags, overlays (6 checks)
